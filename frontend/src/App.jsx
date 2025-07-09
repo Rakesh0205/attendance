@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { RefreshCw, Eye, X, User, Calendar, ChevronRight, CheckCircle } from 'lucide-react';
-
+import Sample from './assets/Sample';
+import FriendsAttendance from './assets/FriendsAttendance';
 function AttendanceDisplay({ data }) {
   // Updated to use attendance_summary instead of today_attendance
   if (!data?.attendance_summary || !Array.isArray(data.attendance_summary) || data.attendance_summary.length === 0) {
@@ -85,8 +86,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [fadeIn, setFadeIn] = useState(false);
   const [error, setError] = useState('');
-  const [isOffline, setIsOffline] = useState(false);
-
+  const [friendsAttendance, setFriendsAttendance] = useState(false);
   const backendUrl = 'https://attendance-4dtj.onrender.com/api/attendance';
 
   // Storage helper functions with fallback
@@ -95,11 +95,10 @@ function App() {
       if (typeof Storage !== 'undefined' && localStorage) {
         localStorage.setItem(key, JSON.stringify(value));
       } else {
-        // Fallback to sessionStorage for Claude.ai environment
         sessionStorage.setItem(key, JSON.stringify(value));
       }
     } catch (error) {
-      console.warn('Storage not available:', error);
+      // Storage not available
     }
   };
 
@@ -109,12 +108,10 @@ function App() {
         const item = localStorage.getItem(key);
         return item ? JSON.parse(item) : null;
       } else {
-        // Fallback to sessionStorage for Claude.ai environment
         const item = sessionStorage.getItem(key);
         return item ? JSON.parse(item) : null;
       }
     } catch (error) {
-      console.warn('Storage not available:', error);
       return null;
     }
   };
@@ -124,24 +121,20 @@ function App() {
       if (typeof Storage !== 'undefined' && localStorage) {
         localStorage.removeItem(key);
       } else {
-        // Fallback to sessionStorage for Claude.ai environment
         sessionStorage.removeItem(key);
       }
     } catch (error) {
-      console.warn('Storage not available:', error);
+      // Storage not available
     }
   };
 
   const fetchAttendance = async (student_id, password) => {
     setError('');
-    setIsOffline(false);
     try {
       const res = await fetch(`${backendUrl}?student_id=${encodeURIComponent(student_id)}&password=${encodeURIComponent(password)}`);
       if (!res.ok) throw new Error('Invalid credentials or server error');
       const json = await res.json();
       if (json.error) throw new Error(json.error);
-      
-      // Store both credentials and attendance data
       setStorage('attendanceCredentials', {
         storedRoll: student_id,
         storedPass: password
@@ -150,26 +143,23 @@ function App() {
         data: json,
         timestamp: Date.now()
       });
-      
       setData(json);
       setError('');
       return true;
     } catch (err) {
       setError(err.message || 'Failed to fetch attendance');
-      
-      // If fetch fails, try to load cached data
-      const cachedData = getStorage('attendanceData');
-      if (cachedData) {
-        setData(cachedData.data);
-        setIsOffline(true);
-        const cacheAge = Math.floor((Date.now() - cachedData.timestamp) / (1000 * 60 * 60)); // hours
-        setError(`Using cached data (${cacheAge} hours old) - Check connection and refresh`);
-      } else {
-        setData(null);
-      }
+      setData(null);
       return false;
     }
   };
+
+  // Memoized handler for Sample drag refresh
+  const handleSampleRefresh = useCallback(async () => {
+    if (!roll || !pass) return;
+    setLoading(true);
+    await fetchAttendance(roll, pass);
+    setLoading(false);
+  }, [roll, pass]);
 
   useEffect(() => {
     setFadeIn(true);
@@ -225,7 +215,6 @@ function App() {
     setData(null);
     setShowLogin(true);
     setError('');
-    setIsOffline(false);
   };
 
   const getAttendanceColor = (percentage) => {
@@ -262,20 +251,7 @@ function App() {
           </p>
         </div>
 
-        {/* Offline/Cache Status */}
-        {isOffline && (
-          <div className="mb-4 md:mb-6 text-center text-orange-600 font-medium bg-orange-50 border border-orange-200 rounded-xl py-2 px-3 md:py-3 md:px-4">
-            📱 Offline Mode - Using cached data
-          </div>
-        )}
-
-        {error && (
-          <div className={`mb-4 md:mb-6 text-center font-medium rounded-xl py-2 px-3 md:py-3 md:px-4 ${
-            isOffline ? 'text-orange-600 bg-orange-50 border border-orange-200' : 'text-red-600 bg-red-50 border border-red-200'
-          }`}>
-            {error}
-          </div>
-        )}
+  
 
         {showLogin ? (
           <div className="max-w-md mx-auto">
@@ -348,13 +324,19 @@ function App() {
                 <div className="p-8">
                   {/* Attendance Percentage - Hero Section */}
                   <div className="text-center mb-8">
-                    <div className={`inline-flex items-center justify-center w-36 h-36 rounded-full text-white mb-4 ${
-                      isGoodAttendance ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-red-500 to-rose-600'
-                    }`}>
-                      <span className="text-4xl font-bold p-2">
-                        {attendancePercentage}%
-                      </span>
+                    <div className='flex flex-row items-center justify-center mb-4 gap-4'>
+                      <div className={`inline-flex items-center justify-center w-36 h-36 rounded-full text-white mb-0 ${
+                        isGoodAttendance ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-red-500 to-rose-600'
+                      }`}>
+                        <span className="text-4xl font-bold p-2">
+                          {attendancePercentage}%
+                        </span>
+                      </div>
+                      <div className="flex items-center h-36">
+                        <Sample onRefresh={handleSampleRefresh} />
+                      </div>
                     </div>
+                    {/* Drag area for Sample component */}
                     <h3 className="text-2xl font-bold text-gray-800 mb-2">Overall Attendance Rate</h3>
                     <p className={`text-lg font-semibold ${
                       isGoodAttendance ? 'text-green-600' : 'text-red-600'
@@ -404,18 +386,29 @@ function App() {
                       <span className="text-sm font-medium text-gray-700">Attendance Progress</span>
                       <span className="text-sm font-medium text-gray-700">{attendancePercentage}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div className="w-full bg-gray-200 rounded-full h-3 relative">
+                      {/* Progress bar */}
                       <div
                         className={`h-3 rounded-full transition-all duration-500 ${
                           isGoodAttendance ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-red-500 to-rose-500'
                         }`}
                         style={{ width: `${Math.min(attendancePercentage, 100)}%` }}
                       ></div>
+                      {/* 75% mark */}
+                      
                     </div>
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <div className="flex justify-between text-xs text-gray-500 mt-1 relative">
                       <span>0%</span>
                       <span className="text-orange-600 font-medium">75% (Required)</span>
                       <span>100%</span>
+                      {/* 75% mark inside this label row */}
+                      <div
+                        className="absolute top-0 left-0 h-full flex items-center pointer-events-none"
+                        style={{ left: '75%', transform: 'translateX(-50%)' }}
+                        aria-label="75% mark"
+                      >
+                        <div className="w-0.5 h-4 bg-gray-200 rounded-full" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -518,8 +511,11 @@ function App() {
           </div>
         )}
       </div>
+      {/* Friends Attendance Section - now uses the creative component */}
+      <FriendsAttendance />
     </div>
   );
+ 
 }
 
 export default App;
